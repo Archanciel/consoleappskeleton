@@ -17,7 +17,7 @@ class Requester:
         
         while inp == 'H':
             self._printHelp()
-            inp = input('Enter command (h for help)\n')
+            inp = input('Enter command (h for help)\n').upper()
         
         if inp == 'Q':   
             return {Command.QUIT : ''}
@@ -27,9 +27,9 @@ class Requester:
     def _printHelp(self):
         print('Usage:\n')
         print('[btc 5/7 0.0015899 6/7 0.00153] [usd chf]')
-        inp = input('\nm for more or anything else to exit help\n')
+        inp = input('\nm for more or anything else to exit help\n').upper()
         
-        if inp.upper() == 'M':
+        if inp == 'M':
             print("\nns - don't save retrieved prices")
             print("rm [1, 3, 4] - remove line numbers\n")
 
