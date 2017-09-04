@@ -1,7 +1,6 @@
-from command import Command
+from abstractcommand import AbstractCommand
 
 class Processor:
-    def execute(self, commands):
-        if Command.CRYPTO in commands:
-            result = 'Command.CRYPTO'
-            return result
+    def execute(self, command):
+        commandParms = command.parsedParmData
+        return None

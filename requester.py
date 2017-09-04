@@ -1,39 +1,153 @@
-from command import Command
+import re
+
+ENTER_COMMAND_PROMPT = 'Enter command (h for help, q to quit)\n'
+USER_COMMAND_GRP_PATTERN = r"(\w+) "
 
 class Requester:
     '''
     Read in commands entered by the
     user, typically
     
-    [btc 5/7 0.0015899 6/7 0.00153] [usd chf]
+    oo btc [5/7 0.0015899 6/7 0.00153] [usd-chf] -nosave
 
-    and return a command dictionnary
-    
-    [CRYPTO: btc 5/7 0.0015899 6/7 0.00153] [FIAT: usd chf]
+    and return a command filled with the command parsed parm data
     '''
+    def __init__(self):
+        self.commandQuit = None
+        self.commandError = None
+        self.commandCrypto = None
+
     def request(self):
-        inp = input('Enter command (h for help)\n')
-        inp = inp.upper()
-        
-        while inp == 'H':
+        inputStr = input(ENTER_COMMAND_PROMPT)
+        upperInputStr = inputStr.upper()
+
+        while upperInputStr == 'H':
             self._printHelp()
-            inp = input('Enter command (h for help)\n').upper()
+            inputStr = input(ENTER_COMMAND_PROMPT)
+            upperInputStr = inputStr.upper()
         
-        if inp == 'Q':   
-            return {Command.QUIT : ''}
+        if upperInputStr == 'Q':
+            return self.commandQuit
+        else: #here, neither help nor quit demand entered. Need to determine which command
+              #is entered by the user finding unique pattern match that identify this command
+            userCommand = self._getUserCommand(inputStr, upperInputStr)
+
+        if userCommand == self.commandError:
+            return self.commandError
+
+        if userCommand == "OO":
+            upperInputStrWithoutUserCommand = upperInputStr[len(userCommand) + 1:]
+            cryptoDataList, fiatDataList, flag = self._parseOOCommandParms(inputStr, upperInputStrWithoutUserCommand)
+
+            if cryptoDataList == self.commandError:
+                return self.commandError
+
+            self.commandCrypto.parsedParmData = {self.commandCrypto.CRYPTO_LIST : cryptoDataList, \
+                                                 self.commandCrypto.FIAT_LIST : fiatDataList, \
+                                                 self.commandCrypto.FLAG : flag}
+
+            return self.commandCrypto
         else:
-            return {Command.CRYPTO : []}
+            self.commandError.rawParmData = inputStr
+            self.commandError.parsedParmData = [self.commandError.USER_COMMAND_MISSING_MSG]
+
+            return self.commandError
+
+
+    def _getUserCommand(self, inputStr, upperInputStr):
+        match = re.match(USER_COMMAND_GRP_PATTERN, upperInputStr)
+
+        if match == None:
+            self.commandError.rawParmData = inputStr
+            self.commandError.parsedParmData = [self.commandError.USER_COMMAND_MISSING_MSG]
+            return self.commandError
+
+        return match.group(1)
+
 
     def _printHelp(self):
         print('Usage:\n')
-        print('[btc 5/7 0.0015899 6/7 0.00153] [usd chf]')
-        inp = input('\nm for more or anything else to exit help\n').upper()
+        print('[btc 5/7 0.0015899 6/7 0.00153] [usd-chf]')
+        print('Beware: IF YOU ENTER MORE THAN ONE FIAT CURRENCY, DO NOT FORGET TO SEPARATE THEM WITH A \'-\' !')
+        inp = input('\nm for more or anything else to exit help\n')
         
-        if inp == 'M':
-            print("\nns - don't save retrieved prices")
-            print("rm [1, 3, 4] - remove line numbers\n")
+        if inp.upper() == 'M':
+            print("\n-ns or -nosave --> don't save retrieved prices")
+            print("-rm [1, 3, 4] --> remove line numbers\n")
+
+
+    def _parseFiat(self, inputStr):
+        # convert "[usd-chf]"
+        # into
+        # ['usd', 'chf']
+        # and return the fiat list
+
+        fiatList = []
+        patternFiat = r"((\w+)-)|((\w+)\])|(\[(w+)\])"
+
+        for grp in re.finditer(patternFiat, inputStr):
+            for elem in grp.groups():
+                if elem != None and len(elem) == 3:
+                    fiatList.append(elem)
+
+        return fiatList
+
+
+    def _parseDatePrice(self, inputStr):
+        # convert "[5/7 0.0015899 6/7 0.00153]"
+        # into
+        # ['5/7', '0.0015899', '6/7', '0.00153']
+        # and return the date price pair list
+
+        priceDateList = []
+        patternDatePrice = r"(\d+/\d+) (\d+\.\d+)"
+
+        for grp in re.finditer(patternDatePrice, inputStr):
+            for elem in grp.groups():
+                priceDateList.append(elem)
+
+        return priceDateList
+
+
+    def _parseOOCommandParms(self, inputStr, upperInputStr):
+        # convert "btc [5/7 0.0015899 6/7 0.00153] [usd-chf] -nosave"
+        # into
+        # cryptoDataList = ['btc', '5/7', '0.0015899', '6/7', '0.00153']
+        # fiatDataList = ['usd', 'chf']
+        # flag = '-nosave'
+        #
+        # in case the user input violates the awaited pattern, a CommandError object is
+        # returned instead of the cryptoDataList
+        pattern = r"(?:(\w+) (\[.*\]) (\[.*\]))|(-\w+)"
+
+        fiatDataList = []
+        cryptoDataList = []
+        flag = None
+        grpNumber = 0
+
+        for grp in re.finditer(pattern, upperInputStr):
+            grpNumber += 1
+            for elem in grp.groups():
+                if elem is not None:
+                    if '[' in elem:
+                        if ' ' in elem:  # list of date/price pairs
+                            cryptoDataList += self._parseDatePrice(elem)
+                        else:  # list of fiat currencies
+                            fiatDataList = self._parseFiat(elem)
+                    else:  # crypto symbol like btc or flag like -nosave
+                        if '-' in elem:
+                            flag = elem
+                        else:  # crypto symbol at first position in input string
+                            cryptoDataList.append(elem)
+
+        if (grpNumber == 0) or (grpNumber == 1 and flag != None):
+            self.commandError.rawParmData = inputStr
+            self.commandError.parsedParmData = [self.commandError.FIAT_LIST_MISSING_MSG]
+            return self.commandError, fiatDataList, flag
+        else:
+            return cryptoDataList, fiatDataList, flag
 
 
 if __name__ == '__main__':
     r = Requester()
-    r.request()
+    print(r._parseCryptoDataFromInput('[btc 5/7 0.0015899 6/7 0.00153] [usd-chf-eur] -nosave'))
